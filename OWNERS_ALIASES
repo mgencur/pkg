@@ -1,0 +1,25 @@
+aliases:
+  pkg-approvers:
+  - alanfx
+  - mgencur
+  - mvinkler
+  - maschmid
+  - bbrowning
+  - jcrossley3
+  - bobmcwhirter
+  - markusthoemmes
+  - vdemeester
+  - evanchooly
+  - arilivigni
+  pkg-reviewers:
+  - alanfx
+  - mgencur
+  - mvinkler
+  - maschmid
+  - bbrowning
+  - jcrossley3
+  - bobmcwhirter
+  - markusthoemmes
+  - vdemeester
+  - evanchooly
+  - arilivigni
