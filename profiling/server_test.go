@@ -31,15 +31,25 @@ import (
 
 func TestUpdateFromConfigMap(t *testing.T) {
 	observabilityConfigTests := []struct {
-		name           string
-		wantEnabled    bool
-		wantStatusCode int
-		config         *corev1.ConfigMap
+		name                   string
+		wantEnabledAtStartup   bool
+		wantEnabledAfterUpdate bool
+		wantStatusCode         int
+		initialConfig          *corev1.ConfigMap
+		updatedConfig          *corev1.ConfigMap
 	}{{
-		name:           "observability with profiling disabled",
-		wantEnabled:    false,
-		wantStatusCode: http.StatusNotFound,
-		config: &corev1.ConfigMap{
+		name:                   "observability with profiling disabled",
+		wantEnabledAtStartup:   false,
+		wantEnabledAfterUpdate: false,
+		wantStatusCode:         http.StatusNotFound,
+		initialConfig: &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: system.Namespace(),
+				Name:      metrics.ConfigMapName(),
+			},
+			Data: map[string]string{},
+		},
+		updatedConfig: &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: system.Namespace(),
 				Name:      metrics.ConfigMapName(),
@@ -49,10 +59,18 @@ func TestUpdateFromConfigMap(t *testing.T) {
 			},
 		},
 	}, {
-		name:           "observability config with profiling enabled",
-		wantEnabled:    true,
-		wantStatusCode: http.StatusOK,
-		config: &corev1.ConfigMap{
+		name:                   "observability config with profiling enabled",
+		wantEnabledAtStartup:   false,
+		wantEnabledAfterUpdate: true,
+		wantStatusCode:         http.StatusOK,
+		initialConfig: &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: system.Namespace(),
+				Name:      metrics.ConfigMapName(),
+			},
+			Data: map[string]string{},
+		},
+		updatedConfig: &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: system.Namespace(),
 				Name:      metrics.ConfigMapName(),
@@ -62,10 +80,18 @@ func TestUpdateFromConfigMap(t *testing.T) {
 			},
 		},
 	}, {
-		name:           "observability config with unparseable value",
-		wantEnabled:    false,
-		wantStatusCode: http.StatusNotFound,
-		config: &corev1.ConfigMap{
+		name:                   "observability config with unparseable value",
+		wantEnabledAtStartup:   false,
+		wantEnabledAfterUpdate: false,
+		wantStatusCode:         http.StatusNotFound,
+		initialConfig: &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: system.Namespace(),
+				Name:      metrics.ConfigMapName(),
+			},
+			Data: map[string]string{},
+		},
+		updatedConfig: &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: system.Namespace(),
 				Name:      metrics.ConfigMapName(),
@@ -74,19 +100,42 @@ func TestUpdateFromConfigMap(t *testing.T) {
 				"profiling.enable": "get me some profiles",
 			},
 		},
+	}, {
+		name:                   "observability config with profiling enabled at startup",
+		wantEnabledAtStartup:   true,
+		wantEnabledAfterUpdate: false,
+		wantStatusCode:         http.StatusNotFound,
+		initialConfig: &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: system.Namespace(),
+				Name:      metrics.ConfigMapName(),
+			},
+			Data: map[string]string{
+				"profiling.enable": "true",
+			},
+		},
+		updatedConfig: &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: system.Namespace(),
+				Name:      metrics.ConfigMapName(),
+			},
+			Data: map[string]string{},
+		},
 	}}
 
 	for _, tt := range observabilityConfigTests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := NewHandler(zap.NewNop().Sugar(), &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: system.Namespace(),
-					Name:      metrics.ConfigMapName(),
-				},
-				Data: map[string]string{},
-			})
+			handler := NewHandler(zap.NewNop().Sugar(), tt.initialConfig)
 
-			handler.UpdateFromConfigMap(tt.config)
+			if handler.enabled != tt.wantEnabledAtStartup {
+				t.Fatalf("Test: %q; want %v, but got %v", tt.name, tt.wantEnabledAtStartup, handler.enabled)
+			}
+
+			handler.UpdateFromConfigMap(tt.updatedConfig)
+
+			if handler.enabled != tt.wantEnabledAfterUpdate {
+				t.Fatalf("Test: %q; want %v, but got %v", tt.name, tt.wantEnabledAfterUpdate, handler.enabled)
+			}
 
 			req, err := http.NewRequest(http.MethodGet, "/debug/pprof/", nil)
 			if err != nil {
@@ -99,10 +148,6 @@ func TestUpdateFromConfigMap(t *testing.T) {
 
 			if rr.Code != tt.wantStatusCode {
 				t.Errorf("StatusCode: %v, want: %v", rr.Code, tt.wantStatusCode)
-			}
-
-			if handler.enabled != tt.wantEnabled {
-				t.Fatalf("Test: %q; want %v, but got %v", tt.name, tt.wantEnabled, handler.enabled)
 			}
 		})
 	}
